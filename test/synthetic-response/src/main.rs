@@ -1,11 +1,11 @@
 use fastly::{Error, Request, Response};
 use fast_rack::{FastRack, Middleware, RackError};
 
-struct SynetheticResponse {
+struct SyntheticResponse {
     body: &'static str,
 }
 
-impl Middleware for SynetheticResponse {
+impl Middleware for SyntheticResponse {
     fn req(&self, _req: &mut Request) -> Result<(), RackError> {
         let response = Response::from_body(self.body);
         Err(RackError::Synthetic(response))
@@ -20,7 +20,7 @@ impl Middleware for SynetheticResponse {
 fn main(mut request: Request) -> Result<Response, Error> {
     let mut rack = FastRack::new();
 
-    rack.add(&SynetheticResponse {
+    rack.add(&SyntheticResponse {
         body: "foo",
     });
 
