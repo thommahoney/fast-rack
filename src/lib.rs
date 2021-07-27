@@ -77,6 +77,7 @@ mod tests {
 
         let child = Command::new("viceroy")
             .args(&[format!("test/{}/target/wasm32-wasi/debug/{}.wasm", test_name, test_name).as_str()])
+            .kill_on_drop(true)
             .spawn()
             .expect("setup failure: failed to start viceroy");
 
