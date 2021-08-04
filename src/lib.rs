@@ -1,5 +1,10 @@
 use fastly::{Error, Request, Response};
 
+/// MAX_RETRIES
+pub const MAX_RETRIES: u8 = 3;
+
+const X_RETRIES_HEADER: &str = "x-retries";
+
 /// FastRack
 pub struct FastRack<'rack> {
     pub middleware: Vec<&'rack mut dyn Middleware>,
@@ -21,34 +26,50 @@ impl<'rack> FastRack<'rack> {
     /// run
     pub fn run(&mut self, request: &mut Request) -> Result<Response, Error> {
         let mut response = Response::new();
+        let mut retries = 0;
 
-        for m in self.middleware.iter() {
-            match m.req(request) {
-                Ok(()) => {},
+        loop {
+            match self.run_inner(request, &mut response) {
+                Ok(()) => break,
                 Err(e) => match e {
+                    RackError::Retry => {
+                        retries += 1;
+
+                        if retries >= MAX_RETRIES {
+                            break
+                        }
+                    },
                     RackError::Synthetic(resp) => {
                         response = resp;
-                        break; // halt further execution
+                        break
                     },
                 }
             }
         }
 
-        for m in self.middleware.iter().rev() {
-            match m.resp(&mut response) {
-                Ok(()) => {},
-                Err(_e) => {
-                    todo!()
-                }
-            }
+        if retries > 0 {
+            response.set_header(X_RETRIES_HEADER, format!("{}", retries));
         }
 
         Ok(response)
+    }
+
+    fn run_inner(&mut self, request: &mut Request, response: &mut Response) -> Result<(), RackError> {
+        for m in self.middleware.iter_mut() {
+            m.req(request)?;
+        }
+
+        for m in self.middleware.iter_mut().rev() {
+            m.resp(response)?;
+        }
+
+        Ok(())
     }
 }
 
 #[derive(Debug)]
 pub enum RackError {
+    Retry,
     Synthetic(Response),
 }
 
@@ -108,6 +129,19 @@ mod tests {
 
         assert_eq!(418, resp.status());
         assert_eq!("foo", resp.text().await.expect("failed to read response body"));
+
+        teardown(&mut child).await;
+    }
+
+    #[tokio::test]
+    async fn it_retries_requests() {
+        let (mut child, port) = setup("retry-request").await;
+
+        let resp = reqwest::get(format!("http://127.0.0.1:{}/", port)).await.expect("reqwest::get failure");
+
+        assert_eq!(200, resp.status());
+        let retries_header = resp.headers().get("x-retries").expect("retries header missing");
+        assert_eq!("2", retries_header);
 
         teardown(&mut child).await;
     }
