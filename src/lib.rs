@@ -63,10 +63,15 @@ pub trait Middleware {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::AtomicU16;
+    use std::sync::atomic::Ordering::SeqCst;
+
     use tokio::process::{Child, Command};
     use reqwest;
 
-    async fn setup(test_name: &str) -> Child {
+    static ATOMIC_PORT: AtomicU16 = AtomicU16::new(7878);
+
+    async fn setup(test_name: &str) -> (Child, u16) {
         Command::new("cargo")
             .current_dir(format!("test/{}", test_name))
             .args(&["build", "--target=wasm32-wasi"])
@@ -75,8 +80,12 @@ mod tests {
             .wait().await
             .expect("setup failure: failed to build");
 
+        let port = ATOMIC_PORT.fetch_add(1, SeqCst);
+
         let child = Command::new("viceroy")
-            .args(&[format!("test/{}/target/wasm32-wasi/debug/{}.wasm", test_name, test_name).as_str()])
+            .arg("--addr")
+            .arg(format!("127.0.0.1:{}", port))
+            .arg(format!("test/{}/target/wasm32-wasi/debug/{}.wasm", test_name, test_name))
             .kill_on_drop(true)
             .spawn()
             .expect("setup failure: failed to start viceroy");
@@ -84,7 +93,7 @@ mod tests {
         // TODO: TCP connect to viceroy?
         tokio::time::sleep(std::time::Duration::new(1, 0)).await;
 
-        child
+        (child, port)
     }
 
     async fn teardown(child: &mut Child) {
@@ -93,9 +102,9 @@ mod tests {
 
     #[tokio::test]
     async fn it_responds_with_a_synthetic() {
-        let mut child = setup("synthetic-response").await;
+        let (mut child, port) = setup("synthetic-response").await;
 
-        let resp = reqwest::get("http://127.0.0.1:7878/").await.expect("reqwest::get failure");
+        let resp = reqwest::get(format!("http://127.0.0.1:{}/", port)).await.expect("reqwest::get failure");
 
         assert_eq!(418, resp.status());
         assert_eq!("foo", resp.text().await.expect("failed to read response body"));
