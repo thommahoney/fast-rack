@@ -7,13 +7,13 @@ struct SyntheticResponse {
 }
 
 impl Middleware for SyntheticResponse {
-    fn req(&self, _req: &mut Request) -> Result<(), RackError> {
+    fn req(&mut self, _req: &mut Request) -> Result<(), RackError> {
         let mut response = Response::from_body(self.body);
         response.set_status(self.status);
         Err(RackError::Synthetic(response))
     }
 
-    fn resp(&self, _resp: &mut Response) -> Result<(), RackError> {
+    fn resp(&mut self, _resp: &mut Response) -> Result<(), RackError> {
         Ok(())
     }
 }
@@ -22,10 +22,12 @@ impl Middleware for SyntheticResponse {
 fn main(mut request: Request) -> Result<Response, Error> {
     let mut rack = FastRack::new();
 
-    rack.add(&SyntheticResponse {
+    let mut synthetic_response = SyntheticResponse {
         body: "foo",
         status: 418,
-    });
+    };
+
+    rack.add(&mut synthetic_response);
 
     rack.run(&mut request)
 }

@@ -2,24 +2,24 @@ use fastly::{Error, Request, Response};
 
 /// FastRack
 pub struct FastRack<'rack> {
-    pub middleware: Vec<&'rack dyn Middleware>,
+    pub middleware: Vec<&'rack mut dyn Middleware>,
 }
 
 impl<'rack> FastRack<'rack> {
     /// new
     pub fn new() -> Self {
         FastRack {
-            middleware: Vec::<&dyn Middleware>::new(),
+            middleware: Vec::<&mut dyn Middleware>::new(),
         }
     }
 
     /// add
-    pub fn add(&mut self, middleware: &'rack (dyn Middleware + 'rack)) {
+    pub fn add(&mut self, middleware: &'rack mut (dyn Middleware + 'rack)) {
         self.middleware.push(middleware);
     }
 
     /// run
-    pub fn run(&self, request: &mut Request) -> Result<Response, Error> {
+    pub fn run(&mut self, request: &mut Request) -> Result<Response, Error> {
         let mut response = Response::new();
 
         for m in self.middleware.iter() {
@@ -55,10 +55,10 @@ pub enum RackError {
 /// Middleware
 pub trait Middleware {
     /// req
-    fn req(&self, req: &mut Request) -> Result<(), RackError>;
+    fn req(&mut self, req: &mut Request) -> Result<(), RackError>;
 
     /// resp
-    fn resp(&self, resp: &mut Response) -> Result<(), RackError>;
+    fn resp(&mut self, resp: &mut Response) -> Result<(), RackError>;
 }
 
 #[cfg(test)]
