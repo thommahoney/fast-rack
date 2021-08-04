@@ -97,7 +97,7 @@ mod tests {
 
         let resp = reqwest::get("http://127.0.0.1:7878/").await.expect("reqwest::get failure");
 
-        assert_eq!(200, resp.status());
+        assert_eq!(418, resp.status());
         assert_eq!("foo", resp.text().await.expect("failed to read response body"));
 
         teardown(&mut child).await;

@@ -3,11 +3,13 @@ use fast_rack::{FastRack, Middleware, RackError};
 
 struct SyntheticResponse {
     body: &'static str,
+    status: u16,
 }
 
 impl Middleware for SyntheticResponse {
     fn req(&self, _req: &mut Request) -> Result<(), RackError> {
-        let response = Response::from_body(self.body);
+        let mut response = Response::from_body(self.body);
+        response.set_status(self.status);
         Err(RackError::Synthetic(response))
     }
 
@@ -22,6 +24,7 @@ fn main(mut request: Request) -> Result<Response, Error> {
 
     rack.add(&SyntheticResponse {
         body: "foo",
+        status: 418,
     });
 
     rack.run(&mut request)
