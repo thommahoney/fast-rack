@@ -84,6 +84,8 @@ pub trait Middleware {
 
 #[cfg(test)]
 mod tests {
+    use std::env;
+    use std::fs::OpenOptions;
     use std::sync::atomic::AtomicU16;
     use std::sync::atomic::Ordering::SeqCst;
 
@@ -91,22 +93,46 @@ mod tests {
     use reqwest;
 
     static ATOMIC_PORT: AtomicU16 = AtomicU16::new(7878);
+    static FAST_RACK_TEST_DEBUG: &'static str = "FAST_RACK_TEST_DEBUG";
 
     async fn setup(test_name: &str) -> (Child, u16) {
-        Command::new("cargo")
-            .current_dir(format!("test/{}", test_name))
+        let build_output = Command::new("cargo")
             .args(&["build", "--target=wasm32-wasi"])
-            .spawn()
-            .expect("setup failure: failed to spawn cargo build")
-            .wait().await
+            .current_dir(format!("test/{}", test_name))
+            .kill_on_drop(true)
+            .output().await
             .expect("setup failure: failed to build");
 
+        let viceroy_stdout_path = format!("test/debug/{}.viceroy.stdout", test_name);
+        let viceroy_stderr_path = format!("test/debug/{}.viceroy.stderr", test_name);
+
+        if let Some(_s) = env::var_os(FAST_RACK_TEST_DEBUG) {
+            println!("=== {} stdout ===\n\n{}", FAST_RACK_TEST_DEBUG, String::from_utf8_lossy(&build_output.stdout));
+            println!("=== {} stderr ===\n\n{}", FAST_RACK_TEST_DEBUG, String::from_utf8_lossy(&build_output.stderr));
+            println!("=== {} ===\n\nMore debug output may be available in:\n    {}\n    {}\n", FAST_RACK_TEST_DEBUG, viceroy_stdout_path, viceroy_stderr_path);
+        }
+
         let port = ATOMIC_PORT.fetch_add(1, SeqCst);
+
+        let viceroy_stdout = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(viceroy_stdout_path)
+            .expect("failed to open viceroy stdout");
+        let viceroy_stderr = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(viceroy_stderr_path)
+            .expect("failed to open viceroy stderr");
 
         let child = Command::new("viceroy")
             .arg("--addr")
             .arg(format!("127.0.0.1:{}", port))
             .arg(format!("test/{}/target/wasm32-wasi/debug/{}.wasm", test_name, test_name))
+            .stdout(viceroy_stdout)
+            .stderr(viceroy_stderr)
             .kill_on_drop(true)
             .spawn()
             .expect("setup failure: failed to start viceroy");
