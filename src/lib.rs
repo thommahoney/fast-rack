@@ -88,12 +88,16 @@ mod tests {
     use std::fs::OpenOptions;
     use std::sync::atomic::AtomicU16;
     use std::sync::atomic::Ordering::SeqCst;
+    use std::time::Duration;
 
     use tokio::process::{Child, Command};
+    use tokio::net::TcpStream;
     use reqwest;
 
     static ATOMIC_PORT: AtomicU16 = AtomicU16::new(7878);
     static FAST_RACK_TEST_DEBUG: &'static str = "FAST_RACK_TEST_DEBUG";
+    static MAX_WAIT: u64 = 300; // 300 x 10ms = 3 seconds
+    static WAIT_INTERVAL_MS: u64 = 10;
 
     async fn setup(test_name: &str) -> (Child, u16) {
         let build_output = Command::new("cargo")
@@ -137,8 +141,25 @@ mod tests {
             .spawn()
             .expect("setup failure: failed to start viceroy");
 
-        // TODO: TCP connect to viceroy?
-        tokio::time::sleep(std::time::Duration::new(1, 0)).await;
+        // ensure viceroy health before returning Child handle
+        let mut interval = tokio::time::interval(Duration::from_millis(WAIT_INTERVAL_MS));
+        for i in 0..=MAX_WAIT {
+            interval.tick().await;
+            match TcpStream::connect(("127.0.0.1", port)).await {
+                Ok(_tcp) => {
+                    if let Some(_s) = env::var_os(FAST_RACK_TEST_DEBUG) {
+                        eprintln!("waited {} ms for viceroy", i * WAIT_INTERVAL_MS);
+                    }
+                    break
+                },
+                Err(e) => {
+                    if i == MAX_WAIT {
+                        panic!("failed to connect to viceroy within {} ms: {}", i * WAIT_INTERVAL_MS, e);
+                    }
+                    continue
+                },
+            }
+        }
 
         (child, port)
     }
